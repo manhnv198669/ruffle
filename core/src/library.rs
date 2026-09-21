@@ -687,16 +687,19 @@ impl<'gc> Library<'gc> {
                 index,
             } => {
                 let descriptor = FontDescriptor::from_parts(&name, is_bold, is_italic);
-                if let Ok(font) =
-                    Font::from_font_file(gc_context, descriptor, data, index, FontType::Device)
-                {
-                    let name = font.descriptor().name().to_owned();
-                    tracing::debug!(
-                        "Loaded new device font \"{name}\" (bold: {is_bold}, italic: {is_italic}) from file"
-                    );
-                    self.device_fonts.register(font);
-                } else {
-                    warn!("Failed to load device font from file");
+                match Font::from_font_file(gc_context, descriptor, data, index, FontType::Device) {
+                    Ok(font) => {
+                        let name = font.descriptor().name().to_owned();
+                        tracing::debug!(
+                            "Loaded new device font \"{name}\" (bold: {is_bold}, italic: {is_italic}) from file"
+                        );
+                        self.device_fonts.register(font);
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to load device font \"{name}\" (index {index}) from file: {e}"
+                        );
+                    }
                 }
             }
             FontDefinition::ExternalRenderer {

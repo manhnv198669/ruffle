@@ -544,9 +544,12 @@ fn fontconfig_sort_device_fonts(
             continue;
         };
 
-        let Ok(index) = index.try_into() else {
+        let Ok(index): Result<u32, _> = index.try_into() else {
             continue;
         };
+        // Fontconfig packs a variable font's named instance into the upper 16
+        // bits of the index; only the low 16 bits select the face in the file.
+        let index = index & 0xFFFF;
 
         let is_bold = weight >= fontconfig::FC_WEIGHT_BOLD;
         let is_italic = slant >= fontconfig::FC_SLANT_ITALIC;
