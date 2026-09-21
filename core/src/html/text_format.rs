@@ -773,10 +773,10 @@ impl FormatSpans {
                         Ok(attributes) => attributes,
                         Err(e) => {
                             tracing::warn!("Error while parsing HTML: {}", e);
-                            return Self {
-                                default_format,
-                                ..Default::default()
-                            };
+                            tracing::debug!("Offending HTML: {:?}", html.to_utf8_lossy());
+                            // Flash keeps the text parsed before a malformed tag
+                            // (e.g. a bare `<` in "a < b") and drops the rest.
+                            break;
                         }
                     };
                     let attribute = move |name| {
@@ -1091,6 +1091,7 @@ impl FormatSpans {
                 Ok(Event::Eof) => break,
                 Err(e) => {
                     tracing::warn!("Error while parsing HTML: {}", e);
+                    tracing::debug!("Offending HTML: {:?}", html.to_utf8_lossy());
                     break;
                 }
                 _ => {}
