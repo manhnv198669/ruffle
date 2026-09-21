@@ -267,25 +267,53 @@ impl<'gc> DispatchList<'gc> {
         false
     }
 
-    /// Yield the event handlers on this dispatch list for a given event.
-    ///
-    /// Event handlers will be yielded in the order they are intended to be
-    /// executed.
-    ///
-    /// `use_capture` indicates if you want handlers that execute during the
-    /// capture phase, or handlers that execute during the bubble and target
-    /// phases.
-    pub fn iter_event_handlers<'a>(
-        &'a mut self,
+    /// Whether any handler is registered for the given event and phase.
+    pub fn has_event_handlers(&self, event: AvmString<'gc>, use_capture: bool) -> bool {
+        self.get_event(event).is_some_and(|sheaf| {
+            sheaf
+                .values()
+                .flatten()
+                .any(|eh| eh.use_capture == use_capture)
+        })
+    }
+
+    /// The distinct priorities registered for an event, ascending.
+    pub fn priorities(&self, event: AvmString<'gc>) -> Vec<i32> {
+        self.get_event(event)
+            .map(|sheaf| sheaf.keys().copied().collect())
+            .unwrap_or_default()
+    }
+
+    /// The handlers currently registered at one priority of an event, in
+    /// the order they were added, for the given phase.
+    pub fn handlers_at(
+        &self,
         event: AvmString<'gc>,
+        priority: i32,
         use_capture: bool,
-    ) -> impl 'a + Iterator<Item = FunctionObject<'gc>> {
-        self.get_event_mut(event)
-            .iter()
-            .rev()
-            .flat_map(|(_p, v)| v.iter())
-            .filter(move |eh| eh.use_capture == use_capture)
-            .map(|eh| eh.handler)
+    ) -> Vec<FunctionObject<'gc>> {
+        self.get_event(event)
+            .and_then(|sheaf| sheaf.get(&priority))
+            .map(|set| {
+                set.iter()
+                    .filter(|eh| eh.use_capture == use_capture)
+                    .map(|eh| eh.handler)
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
+    /// Whether the given handler is still registered at the given priority.
+    pub fn has_handler_at(
+        &self,
+        event: AvmString<'gc>,
+        priority: i32,
+        handler: FunctionObject<'gc>,
+        use_capture: bool,
+    ) -> bool {
+        self.get_event(event)
+            .and_then(|sheaf| sheaf.get(&priority))
+            .is_some_and(|set| set.contains(&EventHandler::new(handler, use_capture)))
     }
 }
 
@@ -383,13 +411,12 @@ fn dispatch_event_to_target<'gc>(
     let name = evtmut.event_type();
     let use_capture = evtmut.phase() == EventPhase::Capturing;
 
-    let handlers: Vec<FunctionObject<'gc>> = dispatch_list
+    let has_handlers = dispatch_list
         .as_dispatch_mut(activation.gc())
         .expect("Internal dispatch list is missing during dispatch!")
-        .iter_event_handlers(name, use_capture)
-        .collect();
+        .has_event_handlers(name, use_capture);
 
-    if !handlers.is_empty() {
+    if has_handlers {
         evtmut.set_target(real_target);
         evtmut.set_current_target(current_target);
     }
@@ -400,24 +427,53 @@ fn dispatch_event_to_target<'gc>(
         return;
     }
 
-    for handler in handlers.iter() {
-        if event.event().is_propagation_stopped_immediately() {
+    let list = |activation: &mut Activation<'_, 'gc>| {
+        dispatch_list
+            .as_dispatch_mut(activation.gc())
+            .expect("Internal dispatch list is missing during dispatch!")
+    };
+
+    // Flash Player keeps the distinct priorities of an event in an ascending
+    // array and walks it backwards by index while calling handlers, so
+    // listeners registered *during* dispatch take part in it (verified
+    // against FP 29): a listener added at a priority that is not visited yet
+    // is called; adding a listener at a new priority inserts into that array
+    // and shifts the walk by one, skipping whichever priority now sits at the
+    // next index; adding to the priority currently being dispatched has no
+    // effect on this dispatch; removing a listener that hasn't run yet means
+    // it doesn't run. Content relies on this, e.g. a top-priority
+    // `addedToStage` listener that registers the real handlers for the same
+    // event and expects them to run right away.
+    let mut index = list(activation).priorities(name).len();
+    while index > 0 {
+        index -= 1;
+        let Some(priority) = list(activation).priorities(name).get(index).copied() else {
             break;
-        }
+        };
+        let handlers = list(activation).handlers_at(name, priority, use_capture);
 
-        let global = activation.context.avm2.toplevel_global_object().unwrap();
+        for handler in handlers {
+            if event.event().is_propagation_stopped_immediately() {
+                return;
+            }
+            if !list(activation).has_handler_at(name, priority, handler, use_capture) {
+                continue;
+            }
 
-        let args = &[event.into()];
-        let result = handler.call(activation, global.into(), FunctionArgs::from_slice(args));
-        if let Err(err) = result {
-            let event_name = event.event().event_type();
+            let global = activation.context.avm2.toplevel_global_object().unwrap();
 
-            Avm2::uncaught_error(
-                activation,
-                None, // TODO we need to set this, but how?
-                err,
-                &format!("Error dispatching event \"{}\"", event_name),
-            );
+            let args = &[event.into()];
+            let result = handler.call(activation, global.into(), FunctionArgs::from_slice(args));
+            if let Err(err) = result {
+                let event_name = event.event().event_type();
+
+                Avm2::uncaught_error(
+                    activation,
+                    None, // TODO we need to set this, but how?
+                    err,
+                    &format!("Error dispatching event \"{}\"", event_name),
+                );
+            }
         }
     }
 }
