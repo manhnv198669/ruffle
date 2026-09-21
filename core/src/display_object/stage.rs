@@ -110,6 +110,10 @@ pub struct StageData<'gc> {
     /// The quality settings of the stage.
     quality: Cell<StageQuality>,
 
+    /// Lowest quality the renderer is allowed to use, regardless of what the
+    /// movie sets. `Stage.quality` still reports the movie's own setting.
+    min_quality: Cell<Option<StageQuality>>,
+
     /// The dimensions of the stage, as reported to ActionScript.
     stage_size: Cell<(u32, u32)>,
 
@@ -165,6 +169,7 @@ impl<'gc> Stage<'gc> {
                 // This is updated when we set the root movie
                 movie_size: Cell::new((0, 0)),
                 quality: Default::default(),
+                min_quality: Cell::new(None),
                 // This is updated in `build_matrices`
                 stage_size: Cell::new((0, 0)),
                 scale_mode: Default::default(),
@@ -284,7 +289,30 @@ impl<'gc> Stage<'gc> {
                 | StageQuality::High16x16
                 | StageQuality::High16x16Linear
         ));
-        context.renderer.set_quality(quality);
+        context.renderer.set_quality(self.effective_quality());
+    }
+
+    /// The quality the renderer actually uses: the stage quality, raised to
+    /// `min_quality` when one is set.
+    pub fn effective_quality(self) -> StageQuality {
+        let quality = self.0.quality.get();
+        match self.0.min_quality.get() {
+            Some(min) if quality.sample_count() < min.sample_count() => min,
+            _ => quality,
+        }
+    }
+
+    /// Sets the lowest quality the renderer may use. Flash Player keeps device
+    /// text anti-aliased even at `StageQuality.LOW`; Ruffle renders text as
+    /// vectors, so a movie that lowers quality for speed gets jagged text unless
+    /// the host clamps it here.
+    pub fn set_min_quality(
+        self,
+        context: &mut UpdateContext<'gc>,
+        min_quality: Option<StageQuality>,
+    ) {
+        self.0.min_quality.set(min_quality);
+        context.renderer.set_quality(self.effective_quality());
     }
 
     pub fn stage3ds(&self) -> Ref<'_, Vec<Avm2Stage3DObject<'gc>>> {

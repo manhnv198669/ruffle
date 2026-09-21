@@ -103,6 +103,13 @@ pub struct Opt {
     #[clap(long, short)]
     pub quality: Option<StageQuality>,
 
+    /// Lowest quality to render at, even if the movie sets a lower one.
+    ///
+    /// Flash Player keeps device-font text anti-aliased at "low"; Ruffle
+    /// does not, so movies that lower quality for speed get jagged text.
+    #[clap(long)]
+    pub min_quality: Option<StageQuality>,
+
     /// The alignment of the stage.
     #[clap(long, short, value_parser(parse_align))]
     pub align: Option<StageAlign>,

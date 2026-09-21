@@ -51,6 +51,7 @@ pub struct LaunchOptions {
     pub filesystem_access_mode: FilesystemAccessMode,
     pub gamepad_button_mapping: HashMap<GamepadButton, KeyCode>,
     pub avm2_optimizer_enabled: bool,
+    pub min_quality: Option<StageQuality>,
 }
 
 impl From<&GlobalPreferences> for LaunchOptions {
@@ -101,6 +102,7 @@ impl From<&GlobalPreferences> for LaunchOptions {
             tcp_connections: value.cli.tcp_connections,
             gamepad_button_mapping: HashMap::from_iter(value.cli.gamepad_button.iter().cloned()),
             avm2_optimizer_enabled: !value.cli.no_avm2_optimizer,
+            min_quality: value.cli.min_quality,
         }
     }
 }
@@ -199,6 +201,7 @@ impl ActivePlayer {
                     filesystem_access_mode: opt.filesystem_access_mode,
                     gamepad_button_mapping: opt.gamepad_button_mapping.clone(),
                     avm2_optimizer_enabled: opt.avm2_optimizer_enabled,
+                    min_quality: opt.min_quality,
                 })
             }
         };
@@ -321,6 +324,7 @@ impl ActivePlayer {
             .with_letterbox(opt.player.letterbox.unwrap_or(Letterbox::On))
             .with_max_execution_duration(opt.player.max_execution_duration.unwrap_or(Duration::MAX))
             .with_quality(opt.player.quality.unwrap_or(StageQuality::High))
+            .with_min_quality(opt.min_quality)
             .with_align(
                 opt.player.align.unwrap_or_default(),
                 opt.player.force_align.unwrap_or_default(),

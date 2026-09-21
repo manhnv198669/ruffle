@@ -976,6 +976,12 @@ impl Player {
         })
     }
 
+    pub fn set_min_quality(&mut self, min_quality: Option<StageQuality>) {
+        self.mutate_with_update_context(|context| {
+            context.stage.set_min_quality(context, min_quality);
+        })
+    }
+
     pub fn set_window_mode(&mut self, window_mode: &str) {
         self.mutate_with_update_context(|context| {
             let stage = context.stage;
@@ -2599,6 +2605,7 @@ pub struct PlayerBuilder {
     player_runtime: PlayerRuntime,
     player_mode: PlayerMode,
     quality: StageQuality,
+    min_quality: Option<StageQuality>,
     page_url: Option<String>,
     frame_rate: Option<f64>,
     external_interface_provider: Option<Box<dyn ExternalInterfaceProvider>>,
@@ -2655,6 +2662,7 @@ impl PlayerBuilder {
             player_runtime: PlayerRuntime::default(),
             player_mode: PlayerMode::default(),
             quality: StageQuality::High,
+            min_quality: None,
             page_url: None,
             frame_rate: None,
             external_interface_provider: None,
@@ -2804,6 +2812,12 @@ impl PlayerBuilder {
     /// Sets the default stage quality
     pub fn with_quality(mut self, quality: StageQuality) -> Self {
         self.quality = quality;
+        self
+    }
+
+    /// Sets the lowest quality the renderer may use, even if the movie asks for less.
+    pub fn with_min_quality(mut self, min_quality: Option<StageQuality>) -> Self {
+        self.min_quality = min_quality;
         self
     }
 
@@ -3129,6 +3143,7 @@ impl PlayerBuilder {
         player_lock.audio.set_frame_rate(frame_rate);
         player_lock.set_letterbox(self.letterbox);
         player_lock.set_quality(self.quality);
+        player_lock.set_min_quality(self.min_quality);
         player_lock.set_viewport_dimensions(ViewportDimensions {
             width: self.viewport_width,
             height: self.viewport_height,
