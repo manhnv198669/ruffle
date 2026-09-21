@@ -283,25 +283,8 @@ impl UiBackend for DesktopUiBackend {
         let is_bold = query.is_bold;
         let is_italic = query.is_italic;
 
-        let query = fontdb::Query {
-            families: &[Family::Name(name)],
-            weight: if is_bold {
-                fontdb::Weight::BOLD
-            } else {
-                fontdb::Weight::NORMAL
-            },
-            style: if is_italic {
-                fontdb::Style::Italic
-            } else {
-                fontdb::Style::Normal
-            },
-            ..Default::default()
-        };
-
         // It'd be nice if we can get the full list of candidates... Feature request?
-        if let Some(id) = self.font_database.query(&query)
-            && let Some(face) = self.font_database.face(id)
-        {
+        if let Some(face) = self.find_face(name, is_bold, is_italic) {
             tracing::info!(
                 "Loading device font \"{}\" for \"{name}\" (italic: {is_italic}, bold: {is_bold})",
                 face.post_script_name
@@ -327,14 +310,18 @@ impl UiBackend for DesktopUiBackend {
                 // Times New Roman. Flash Player instead falls back to the default sans for
                 // unknown families, and the core only does that when we return nothing,
                 // so only sort fonts of families that actually exist.
-                if !self.has_font_family(&query.name) {
+                let Some(family) = self.resolve_family(&query.name) else {
                     tracing::info!(
                         "Font family \"{}\" not found, falling back to default font",
                         query.name
                     );
                     return Vec::new();
-                }
-                fontconfig_sort_device_fonts(query, register)
+                };
+                tracing::debug!(
+                    "Sorting device fonts for \"{}\" (family \"{family}\")",
+                    query.name
+                );
+                fontconfig_sort_device_fonts(&family, query, register)
             }
             _ => {
                 Vec::new()
@@ -407,14 +394,43 @@ impl UiBackend for DesktopUiBackend {
     fn close_file_dialog(&mut self) {}
 }
 
-#[cfg(all(unix, feature = "fontconfig"))]
 impl DesktopUiBackend {
-    fn has_font_family(&self, name: &str) -> bool {
+    /// Finds the face for a font name the way the OS text stack does: by family
+    /// name first, then by PostScript name (e.g. "ArialMT", "Arial-BoldMT"),
+    /// which SWFs authored on macOS commonly use as the device font name.
+    fn find_face(&self, name: &str, is_bold: bool, is_italic: bool) -> Option<&FaceInfo> {
         let query = fontdb::Query {
             families: &[Family::Name(name)],
+            weight: if is_bold {
+                fontdb::Weight::BOLD
+            } else {
+                fontdb::Weight::NORMAL
+            },
+            style: if is_italic {
+                fontdb::Style::Italic
+            } else {
+                fontdb::Style::Normal
+            },
             ..Default::default()
         };
-        self.font_database.query(&query).is_some()
+        if let Some(id) = self.font_database.query(&query) {
+            return self.font_database.face(id);
+        }
+        self.font_database
+            .faces()
+            .find(|face| face.post_script_name.eq_ignore_ascii_case(name))
+    }
+
+    /// Resolves a requested font name to an installed family name, or `None`
+    /// when nothing on the system matches it by family or PostScript name.
+    #[cfg(all(unix, feature = "fontconfig"))]
+    fn resolve_family(&self, name: &str) -> Option<String> {
+        let face = self.find_face(name, false, false)?;
+        face.families
+            .iter()
+            .find(|(family, _)| family.eq_ignore_ascii_case(name))
+            .or_else(|| face.families.first())
+            .map(|(family, _)| family.clone())
     }
 }
 
@@ -469,6 +485,7 @@ fn load_fontdb_font(name: String, face: &FaceInfo) -> Result<FontDefinition<'sta
 
 #[cfg(all(unix, feature = "fontconfig"))]
 fn fontconfig_sort_device_fonts(
+    family: &str,
     query: &FontQuery,
     register: &mut dyn FnMut(FontDefinition),
 ) -> Vec<FontQuery> {
@@ -482,7 +499,7 @@ fn fontconfig_sort_device_fonts(
         return Vec::new();
     };
 
-    let Ok(family) = std::ffi::CString::new(query.name.as_str()) else {
+    let Ok(family) = std::ffi::CString::new(family) else {
         tracing::error!("Cannot sort device fonts, null in font family");
         return Vec::new();
     };
