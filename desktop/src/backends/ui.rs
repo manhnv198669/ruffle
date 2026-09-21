@@ -322,6 +322,18 @@ impl UiBackend for DesktopUiBackend {
     ) -> Vec<FontQuery> {
         cfg_select! {
             all(unix, feature = "fontconfig") => {
+                // FcFontSort never returns an empty set: for a family that doesn't exist it
+                // returns every font ordered by "similarity", which on macOS starts with
+                // Times New Roman. Flash Player instead falls back to the default sans for
+                // unknown families, and the core only does that when we return nothing,
+                // so only sort fonts of families that actually exist.
+                if !self.has_font_family(&query.name) {
+                    tracing::info!(
+                        "Font family \"{}\" not found, falling back to default font",
+                        query.name
+                    );
+                    return Vec::new();
+                }
                 fontconfig_sort_device_fonts(query, register)
             }
             _ => {
@@ -393,6 +405,17 @@ impl UiBackend for DesktopUiBackend {
     }
 
     fn close_file_dialog(&mut self) {}
+}
+
+#[cfg(all(unix, feature = "fontconfig"))]
+impl DesktopUiBackend {
+    fn has_font_family(&self, name: &str) -> bool {
+        let query = fontdb::Query {
+            families: &[Family::Name(name)],
+            ..Default::default()
+        };
+        self.font_database.query(&query).is_some()
+    }
 }
 
 fn load_font_from_file(

@@ -504,8 +504,23 @@ impl<'gc> Library<'gc> {
             let query = FontQuery::new(FontType::Device, name, is_bold, is_italic);
             if let Some(font) = self.get_or_load_exact_device_font(&query, ui, renderer, gc_context)
             {
-                result.push(font);
-                break; // TODO: Return multiple fonts when it's needed.
+                // Ask the backend for the sorted list starting at this font, so glyphs it
+                // lacks (e.g. fullwidth punctuation in Arial) fall back to other device
+                // fonts, like Flash Player does. The backend may not support sorting.
+                let sorted = self.get_or_sort_device_fonts(
+                    &query.name,
+                    is_bold,
+                    is_italic,
+                    ui,
+                    renderer,
+                    gc_context,
+                );
+                if sorted.is_empty() {
+                    result.push(font);
+                } else {
+                    result = sorted;
+                }
+                break;
             }
         }
 
