@@ -29,6 +29,8 @@ struct MainWindow {
     player: PlayerController,
     minimized: bool,
     mouse_pos: PhysicalPosition<f64>,
+    /// Pixel scroll distance not yet turned into whole wheel lines.
+    wheel_remainder: f64,
     modifiers: Modifiers,
     min_window_size: LogicalSize<u32>,
     max_window_size: PhysicalSize<u32>,
@@ -173,7 +175,23 @@ impl MainWindow {
                 use winit::event::MouseScrollDelta;
                 let delta = match delta {
                     MouseScrollDelta::LineDelta(_, dy) => MouseWheelDelta::Lines(dy.into()),
-                    MouseScrollDelta::PixelDelta(pos) => MouseWheelDelta::Pixels(pos.y),
+                    MouseScrollDelta::PixelDelta(pos) => {
+                        // Trackpads and precise mice (macOS) report many small pixel
+                        // deltas. Flash gets whole lines per event, and the core
+                        // truncates fractions to 0, so gather pixels until they add
+                        // up to a line (a wheel notch is ~3 lines per 100px).
+                        const PIXELS_PER_LINE: f64 = 100.0 / 3.0;
+                        if pos.y.signum() != self.wheel_remainder.signum() {
+                            self.wheel_remainder = 0.0;
+                        }
+                        self.wheel_remainder += pos.y;
+                        let lines = (self.wheel_remainder / PIXELS_PER_LINE).trunc();
+                        if lines == 0.0 {
+                            return;
+                        }
+                        self.wheel_remainder -= lines * PIXELS_PER_LINE;
+                        MouseWheelDelta::Lines(lines)
+                    }
                 };
                 let event = PlayerEvent::MouseWheel { delta };
                 self.player.handle_event(event);
@@ -544,6 +562,7 @@ impl ApplicationHandler<RuffleEvent> for App {
                 loaded,
                 minimized: false,
                 mouse_pos: PhysicalPosition::new(0.0, 0.0),
+                wheel_remainder: 0.0,
                 modifiers: Modifiers::default(),
                 time: Instant::now(),
                 next_frame_time: None,
