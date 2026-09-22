@@ -527,7 +527,7 @@ impl<'gc> TDisplayObject<'gc> for Video<'gc> {
             VideoSource::Unconnected { .. } => return context.transform_stack.pop(),
         };
 
-        let smoothing = match (context.stage.quality(), version) {
+        let smoothing = match (context.stage.effective_quality(), version) {
             (StageQuality::Low, _) => false,
             (_, 8..) => smoothed_flag,
             (StageQuality::Medium, _) => false,

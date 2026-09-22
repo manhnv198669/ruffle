@@ -1351,7 +1351,7 @@ impl<'gc> EditText<'gc> {
                 x,
                 Twips::ZERO,
             );
-        let pixel_snapping = EditTextPixelSnapping::new(context.stage.quality());
+        let pixel_snapping = EditTextPixelSnapping::new(context.stage.effective_quality());
         pixel_snapping.apply(&mut caret);
 
         // We have to draw the caret outside of the text mask.
@@ -1371,7 +1371,7 @@ impl<'gc> EditText<'gc> {
         let mut underline = context.transform_stack.transform().matrix
             * Matrix::create_box_with_rotation(width.to_pixels() as f32, 1.0, 0.0, Twips::ZERO, y);
 
-        let pixel_snapping = EditTextPixelSnapping::new(context.stage.quality());
+        let pixel_snapping = EditTextPixelSnapping::new(context.stage.effective_quality());
         pixel_snapping.apply(&mut underline);
 
         context.commands.draw_line(color, underline);
@@ -2938,7 +2938,7 @@ impl<'gc> EditText<'gc> {
         background_color: Option<Color>,
         border_color: Option<Color>,
     ) {
-        let quality = context.stage.quality();
+        let quality = context.stage.effective_quality();
         let pixel_snapping = &EditTextPixelSnapping::new(quality);
 
         let transform = context.transform_stack.transform();

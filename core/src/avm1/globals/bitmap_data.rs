@@ -561,7 +561,7 @@ fn draw<'gc>(
 
     // Do this last, so that we only call `overwrite_cpu_pixels_from_gpu`
     // if we're actually going to draw something.
-    let quality = activation.context.stage.quality();
+    let quality = activation.context.stage.effective_quality();
     match operations::draw(
         activation.context,
         bitmap_data,
